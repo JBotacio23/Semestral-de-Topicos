@@ -1,0 +1,118 @@
+# Pipeline CI/CD — Sistema de Registro de Naves (AMP)
+# Sprint 2: build/test/deploy reales para HU-01/HU-02. security y e2e siguen
+# pendientes de completar (SQLMap y specs de Cypress). Ver docs/06-ci-cd.md
+
+stages:
+  - build
+  - test
+  - security
+  - deploy
+  - e2e
+
+default:
+  image: node:20-alpine
+
+variables:
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
+
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+    - node_modules/
+
+# --------------------------------------------------------------------------
+# build — instala dependencias y compila Next.js
+# --------------------------------------------------------------------------
+build:
+  stage: build
+  script:
+    - npm ci
+    - npm run build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# --------------------------------------------------------------------------
+# test — lint + pruebas unitarias (Jest sobre lib/services)
+# --------------------------------------------------------------------------
+lint-and-unit:
+  stage: test
+  script:
+    - npm ci
+    - npm run lint
+    - npm run test -- --ci
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# --------------------------------------------------------------------------
+# security — SQLMap contra las API routes
+# --------------------------------------------------------------------------
+sqlmap:
+  stage: security
+  image: python:3.12-slim
+  allow_failure: true # Sprint 1-2: informativo. Luego pasa a bloqueante.
+  script:
+    - echo "TODO Sprint 1: pip install sqlmap && sqlmap -u <endpoint HU-01> --batch --output-dir=sqlmap-report"
+  artifacts:
+    when: always
+    paths:
+      - sqlmap-report/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# --------------------------------------------------------------------------
+# deploy:staging — migraciones Supabase staging + Vercel Preview
+# --------------------------------------------------------------------------
+deploy:staging:
+  stage: deploy
+  environment:
+    name: staging
+  script:
+    - npx supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+    - npx supabase db push
+    - npm ci
+    - npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+    - npx vercel build --token="$VERCEL_TOKEN"
+    - npx vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# --------------------------------------------------------------------------
+# deploy:prod — manual, con aprobación
+# --------------------------------------------------------------------------
+deploy:prod:
+  stage: deploy
+  environment:
+    name: production
+  when: manual
+  script:
+    - npx supabase link --project-ref "$SUPABASE_PROD_PROJECT_REF" --password "$SUPABASE_PROD_DB_PASSWORD"
+    - npx supabase db push
+    - npm ci
+    - npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+    - npx vercel build --prod --token="$VERCEL_TOKEN"
+    - npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# --------------------------------------------------------------------------
+# e2e — Cypress contra staging
+# --------------------------------------------------------------------------
+cypress:
+  stage: e2e
+  image: cypress/included:13.6.0
+  needs:
+    - deploy:staging
+  script:
+    - echo "TODO Sprint 1: cypress run --config baseUrl=$CYPRESS_BASE_URL"
+  artifacts:
+    when: always
+    paths:
+      - cypress/videos/
+      - cypress/screenshots/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"

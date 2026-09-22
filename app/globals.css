@@ -1,0 +1,72 @@
+:root {
+  color-scheme: light;
+  --azul: #0b4f8a;
+  --gris: #f4f6f8;
+  --borde: #d7dde3;
+  --error: #b3261e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--gris);
+  color: #1b1f23;
+}
+
+.app-header {
+  background: var(--azul);
+  color: white;
+  padding: 1rem 1.5rem;
+}
+
+.app-main {
+  max-width: 720px;
+  margin: 2rem auto;
+  padding: 0 1rem 3rem;
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin: 0.75rem 0 0.25rem;
+}
+
+input, select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+button {
+  margin-top: 1.25rem;
+  padding: 0.6rem 1.2rem;
+  background: var(--azul);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.errores {
+  color: var(--error);
+  margin-top: 1rem;
+}
+
+.lista-documentos li { margin-bottom: 0.4rem; }
+.pendiente { color: #8a6d00; }
+.completo { color: #1a7a3c; }

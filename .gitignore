@@ -1,0 +1,54 @@
+# Dependencias
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Testing
+/coverage
+/cypress/videos
+/cypress/screenshots
+/cypress/downloads
+
+# Next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+
+# Producción
+/dist
+
+# Vercel
+.vercel
+
+# Supabase
+/supabase/.branches
+/supabase/.temp
+**/supabase/.env
+
+# Variables de entorno
+.env
+.env*.local
+.env.development
+.env.production
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Editores / SO
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Misc
+*.pem
