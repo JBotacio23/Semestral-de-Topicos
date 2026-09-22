@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -11,6 +12,7 @@ export default function RegistroPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [pendienteConfirmar, setPendienteConfirmar] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -18,10 +20,14 @@ export default function RegistroPage() {
     setError(null);
 
     const supabase = createClient();
-    const { error: errorSignUp } = await supabase.auth.signUp({
+    const { data, error: errorSignUp } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { nombre } },
+      options: {
+        data: { nombre },
+        // Debe estar en Supabase → Authentication → URL Configuration → Redirect URLs
+        emailRedirectTo: `${window.location.origin}/login`,
+      },
     });
 
     setCargando(false);
@@ -29,7 +35,26 @@ export default function RegistroPage() {
       setError(errorSignUp.message);
       return;
     }
-    router.push("/login");
+
+    // Sin sesión = el proyecto exige confirmar el correo antes de ingresar.
+    if (!data.session) {
+      setPendienteConfirmar(true);
+      return;
+    }
+    router.push("/solicitudes/nueva");
+    router.refresh();
+  }
+
+  if (pendienteConfirmar) {
+    return (
+      <div className="card">
+        <h1>Revisa tu correo</h1>
+        <p>
+          Te enviamos un enlace de confirmación a <strong>{email}</strong>. Ábrelo y después{" "}
+          <Link href="/login">inicia sesión</Link>.
+        </p>
+      </div>
+    );
   }
 
   return (

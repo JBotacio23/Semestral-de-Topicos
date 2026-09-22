@@ -39,7 +39,7 @@ desplegado como una sola aplicación Next.js (App Router) en Vercel.
 | Service | `lib/services/*.ts` | Reglas de negocio, transiciones de estado, orquestación |
 | Model | `lib/models/*.ts` | CRUD sobre Supabase, mapeo fila↔dominio |
 | Infra | `lib/supabase/` | Clientes (browser, server, admin), tipos generados |
-| Edge | `supabase/functions/verificar-documento/` | Pipeline de 5 etapas disparado por Storage Trigger |
+| Edge | `supabase/functions/verificar-documento/` | Pipeline de 5 etapas, lo dispara un trigger `after insert` sobre `documentos` (vía `pg_net`) |
 
 ## Reglas de dependencia
 

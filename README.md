@@ -28,7 +28,7 @@ npm run dev
 ```
 
 Ya existe un `.env` en la raíz con las credenciales del proyecto Supabase (no se
-sube al repo — está en `.gitignore`). Si te falta, pide los valores a quien
+sube al repo porque está en `.gitignore`). Si te falta, pide los valores a quien
 provisionó el proyecto en vez de crear uno nuevo; usa `.env.example` solo como
 referencia de qué variables hacen falta.
 
@@ -36,9 +36,10 @@ Abrir **http://localhost:3000**. Requiere haber aplicado las migraciones de
 `supabase/migrations/` al proyecto Supabase (`npx supabase db push` con el CLI
 enlazado, o pegar el SQL en el SQL Editor del dashboard).
 
-Implementado hasta ahora: **HU-01** (crear solicitud) y **HU-02** (cargar
-documentos, con validación de tipo/tamaño; el escaneo antimalware del pipeline
-de documentos queda pendiente como Edge Function separada).
+Implementado hasta ahora: **HU-01** (crear solicitud y correo de confirmación con
+Resend) y **HU-02** (cargar documentos con el pipeline de verificación). El escaneo
+antimalware necesita el servicio de `services/clamav` desplegado aparte; mientras no
+exista, la Edge Function omite esa etapa y lo deja en el log.
 
 ## Arquitectura
 
@@ -68,13 +69,15 @@ Arquitectura en capas con patrón MVC en el backend:
 
 ## Pipeline de verificación de documentos
 
-Automatizado con Supabase Edge Functions, disparado por un Storage Trigger al subir un archivo:
+Lo dispara un trigger de PostgreSQL cuando se registra el documento, y corre en la
+Edge Function `verificar-documento` (detalle en [docs/06-ci-cd.md](docs/06-ci-cd.md)):
 
-1. Subida del PDF a Supabase Storage
-2. Validación de formato (MIME) y tamaño máximo
-3. Escaneo antimalware (ej. ClamAV)
-4. Validación de campos / adjuntos obligatorios según el tipo de trámite
-5. Cambio automático de estado a "En revisión" (o rechazo automático si algo falla)
+1. Subida del archivo a Supabase Storage
+2. Validación del formato real (magic bytes) y del tamaño máximo de 5 MB
+3. Escaneo antimalware con ClamAV
+4. Validación de los adjuntos obligatorios del trámite
+5. Paso automático a "En revisión" cuando todos están aprobados; un documento
+   rechazado muestra el motivo y se vuelve a cargar
 
 La única etapa manual por diseño es la aprobación final del funcionario AMP.
 

@@ -50,7 +50,7 @@ export default function NuevaSolicitudPage() {
   return (
     <div className="card">
       <h1>Solicitud de registro de nave</h1>
-      <p>HU-01 — Completa los datos de la nave y del armador.</p>
+      <p>Completa los datos de la nave y del armador.</p>
 
       <form onSubmit={onSubmit}>
         <label htmlFor="nombre_nave">Nombre de la nave</label>
