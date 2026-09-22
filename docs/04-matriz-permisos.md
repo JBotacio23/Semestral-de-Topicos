@@ -37,10 +37,11 @@ Leyenda: ✅ permitido · 🔸 permitido solo sobre recursos propios · ❌ dene
 | Tabla | SELECT | INSERT | UPDATE | Sprint |
 |---|---|---|---|---|
 | `usuarios` | fila propia; funcionario ve todas | vía trigger de signup | fila propia (datos no sensibles) | 1 |
-| `naves` | dueño (`armador_id = auth.uid()`); funcionario todas | `naviera_armador` | dueño mientras solicitud no enviada | 1 |
-| `solicitudes` | dueño; funcionario todas; aseguradora si relacionada | `naviera_armador` | funcionario (estado); dueño (mientras `recibida`) | 1 / 3 |
-| `documentos` | dueño de la solicitud; funcionario | dueño mientras `recibida`/`requiere_correccion` | funcionario (campo observación); Edge Function (estado verificación) | 2 |
-| `historial_estados` | quien pueda ver la solicitud | solo `service_role` (lo escribe el Service) | nadie (inmutable) | 3 |
+| `naves` | dueño (`armador_id = auth.uid()`); funcionario todas | `naviera_armador` (vía RPC `crear_solicitud`) | dueño mientras solicitud no enviada | 1 |
+| `solicitudes` | dueño; funcionario todas; aseguradora si relacionada | `naviera_armador` (vía RPC `crear_solicitud`, atómico con la nave y la bitácora) | funcionario (estado); dueño (mientras `recibida`) | 1 / 3 |
+| `documentos` | dueño de la solicitud; funcionario | solo `service_role`, después de que el Service valida dueño, estado `recibida`, MIME real y tamaño (migración 0004) | funcionario (campo observación); Edge Function (estado verificación) | 2 |
+| `storage.objects` (`documentos-solicitud`) | dueño de la solicitud | solo `service_role`; el bucket limita a PDF/PNG/JPG y 5 MB | nadie | 2 |
+| `historial_estados` | quien pueda ver la solicitud | solo `service_role` o funciones `security definer` (`crear_solicitud`, `enviar_solicitud`) | nadie (inmutable) | 3 |
 | `certificados` | relacionados con la nave; **público** solo por `codigo_verificacion` con columnas limitadas (vista) | solo `service_role` | solo `service_role` (revocar) | 5 / 7 |
 | `notificaciones` | `usuario_id = auth.uid()` | `service_role` | dueño (marcar leída) | 3 |
 

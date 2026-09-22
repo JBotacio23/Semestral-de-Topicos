@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { TIPOS_DOCUMENTO_REQUERIDOS, type CrearSolicitudInput } from "@/lib/validation/solicitud";
+import { enviarConfirmacionSolicitud } from "@/lib/services/notificacionService";
 
 export class ServiceError extends Error {
   constructor(message: string, public status: number) {
@@ -9,55 +9,29 @@ export class ServiceError extends Error {
 }
 
 /**
- * HU-01 — crea la nave y la solicitud de registro para el usuario autenticado.
- * `db` es el cliente con sesión del usuario: los inserts pasan por RLS,
- * así que solo puede crear solicitudes a su propio nombre (naves.armador_id,
- * solicitudes.solicitante_id = auth.uid()).
+ * HU-01 — crea la nave, la solicitud y la entrada inicial de la bitácora para
+ * el usuario autenticado, en una sola transacción (función `crear_solicitud`,
+ * supabase/migrations/0005_crear_solicitud_rpc.sql). `db` es el cliente con
+ * sesión del usuario: el dueño lo fija la BD con auth.uid().
  */
-export async function crearSolicitud(db: SupabaseClient, userId: string, input: CrearSolicitudInput) {
-  const { data: nave, error: errorNave } = await db
-    .from("naves")
-    .insert({
-      nombre: input.nombre_nave,
-      tipo: input.tipo_nave,
-      numero_omi: input.numero_omi ?? null,
-      bandera_actual: input.bandera_actual,
-      puerto_registro_actual: input.puerto_registro_actual ?? null,
-      armador_id: userId,
-    })
-    .select()
-    .single();
-
-  if (errorNave) throw new ServiceError(errorNave.message, 400);
-
-  const { data: solicitud, error: errorSolicitud } = await db
-    .from("solicitudes")
-    .insert({
-      nave_id: nave.id,
-      solicitante_id: userId,
-      nombre_armador: input.nombre_armador,
-      identificacion_armador: input.identificacion_armador,
-      email_contacto: input.email_contacto,
-      telefono_contacto: input.telefono_contacto,
-    })
-    .select()
-    .single();
-
-  if (errorSolicitud) throw new ServiceError(errorSolicitud.message, 400);
-
-  // Bitácora de creación (estado inicial). Se escribe con el cliente admin
-  // porque historial_estados no admite INSERT desde el usuario (ver RLS).
-  const admin = createAdminClient();
-  await admin.from("historial_estados").insert({
-    solicitud_id: solicitud.id,
-    estado_anterior: null,
-    estado_nuevo: "recibida",
-    cambiado_por: userId,
+export async function crearSolicitud(db: SupabaseClient, input: CrearSolicitudInput) {
+  const { data: solicitud, error } = await db.rpc("crear_solicitud", {
+    p_nombre_nave: input.nombre_nave,
+    p_tipo_nave: input.tipo_nave,
+    p_numero_omi: input.numero_omi ?? null,
+    p_bandera_actual: input.bandera_actual,
+    p_puerto_registro_actual: input.puerto_registro_actual ?? null,
+    p_nombre_armador: input.nombre_armador,
+    p_identificacion_armador: input.identificacion_armador,
+    p_email_contacto: input.email_contacto,
+    p_telefono_contacto: input.telefono_contacto,
   });
 
-  // TODO: enviar correo de confirmación con el número de trámite (criterio
-  // de aceptación de HU-01). Pendiente: conectar Resend (RESEND_API_KEY ya
-  // está en .env) o Supabase Auth email hooks. Ver docs/02-entornos.md.
+  if (error) throw new ServiceError(error.message, error.code === "AMP01" ? 401 : 400);
+
+  // Criterio de aceptación de HU-01. Si el correo falla, la solicitud ya
+  // quedó creada: se registra en el log y el número se muestra en pantalla.
+  await enviarConfirmacionSolicitud(solicitud.email_contacto, solicitud.numero_tramite);
 
   return solicitud;
 }
@@ -75,13 +49,16 @@ export async function obtenerSolicitudPorTramite(db: SupabaseClient, numeroTrami
 
   const { data: documentos, error: errorDocs } = await db
     .from("documentos")
-    .select("id, tipo_documento, nombre_original, mime, tamano_bytes, estado_verificacion, creado_en")
+    .select("id, tipo_documento, nombre_original, mime, tamano_bytes, estado_verificacion, motivo_rechazo, creado_en")
     .eq("solicitud_id", solicitud.id)
     .order("creado_en");
 
   if (errorDocs) throw new ServiceError(errorDocs.message, 400);
 
-  const presentes = new Set((documentos ?? []).map((d) => d.tipo_documento));
+  // Un documento rechazado por el pipeline de verificación no cuenta: hay que volver a cargarlo.
+  const presentes = new Set(
+    (documentos ?? []).filter((d) => d.estado_verificacion !== "rechazado").map((d) => d.tipo_documento)
+  );
   const faltantes = TIPOS_DOCUMENTO_REQUERIDOS.filter((t) => !presentes.has(t));
 
   return {
@@ -94,7 +71,9 @@ export async function obtenerSolicitudPorTramite(db: SupabaseClient, numeroTrami
 }
 
 /**
- * HU-02 — pasa la solicitud a "en_revision" si ya tiene los documentos obligatorios.
+ * HU-02 — respaldo manual e idempotente: normalmente la solicitud pasa sola a
+ * "en_revision" cuando la Edge Function verificar-documento aprueba el último
+ * documento obligatorio. Exige los obligatorios en estado "aprobado".
  * El usuario no tiene privilegio UPDATE sobre `estado`: la transición y la
  * bitácora las hace la función `enviar_solicitud` en una sola transacción
  * (supabase/migrations/0003_restringir_columnas_y_enviar.sql).

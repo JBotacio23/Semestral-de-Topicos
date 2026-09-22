@@ -70,3 +70,6 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .lista-documentos li { margin-bottom: 0.4rem; }
 .pendiente { color: #8a6d00; }
 .completo { color: #1a7a3c; }
+.verificacion-pendiente { color: #8a6d00; }
+.verificacion-aprobado { color: #1a7a3c; }
+.verificacion-rechazado { color: var(--error); }

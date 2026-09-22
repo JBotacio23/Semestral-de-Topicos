@@ -47,14 +47,45 @@ Cada sprint archiva como artefactos del pipeline:
 
 ## Pipeline de verificación de documentos (Edge Function, no es parte del CI)
 
-Se implementa en el Sprint 2. Disparado por **Storage Trigger** al subir a
-`documentos-solicitud`:
+Implementado en el Sprint 2 (migraciones `0004`–`0006`,
+`supabase/functions/verificar-documento`, `services/clamav`).
 
-1. Descarga el archivo del evento.
-2. Valida MIME real (magic bytes) y `tamano_bytes` ≤ máximo por tipo.
-3. Escaneo antimalware (ClamAV vía servicio/daemon).
-4. Valida que estén todos los `tipo_documento` obligatorios para el trámite.
-5. Actualiza `documentos.estado_verificacion` y, si todos aprobados, mueve la
-   `solicitud` a `en_revision`; si algo falla, `requiere_correccion` + notificación.
+`POST /api/solicitudes/:n/documentos` valida el MIME declarado y el real
+(magic bytes) y el tamaño, sube el archivo a `documentos-solicitud` y registra
+la fila en `documentos`, las dos cosas con `service_role`: el usuario no puede
+escribir directo en Storage ni en `documentos`. El `INSERT` dispara un trigger
+que, vía `pg_net`, invoca la Edge Function `verificar-documento`:
+
+1. Descarga el archivo de Storage.
+2. Revalida el MIME real (magic bytes) y el tamaño (≤ 5 MB; el bucket también lo impone).
+3. Escaneo antimalware con ClamAV (servicio REST aparte, ver `services/clamav/README.md`).
+   Sin `CLAMAV_URL` la etapa se omite y queda registrado en el log; con
+   `ESCANEO_OBLIGATORIO=true` el documento queda `pendiente` hasta que ClamAV responda.
+4. Valida que estén todos los `tipo_documento` obligatorios, aprobados (`contar_documentos_faltantes`).
+5. Marca `documentos.estado_verificacion` (`aprobado`/`rechazado` + `motivo_rechazo`) y,
+   si ya están todos, `avanzar_a_revision` pasa la solicitud a `en_revision` y lo
+   registra en `historial_estados`.
+
+Un documento rechazado se vuelve a cargar. Si la Edge Function falla, el
+documento queda `pendiente` y `reintentar_verificaciones_pendientes()` lo vuelve a enviar
+(se puede programar con `pg_cron`).
+
+### Puesta en marcha (por proyecto Supabase: staging y prod)
+
+```bash
+npx supabase link --project-ref <ref>
+npx supabase db push                     # migraciones 0004–0006
+npx supabase functions deploy verificar-documento --no-verify-jwt
+npx supabase secrets set WEBHOOK_SECRET=<secreto> CLAMAV_URL=<url> CLAMAV_API_TOKEN=<token>
+```
+
+En el SQL Editor, con el mismo `<secreto>`:
+
+```sql
+select vault.create_secret('https://<ref>.supabase.co', 'verificacion_project_url');
+select vault.create_secret('<secreto>', 'verificacion_webhook_secret');
+```
+
+Para comprobarlo, correr `supabase/scripts/verificar_ajustes_hu01_hu02.sql` en el SQL Editor.
 
 La única etapa manual del proceso de negocio es la aprobación final del funcionario (HU-04).

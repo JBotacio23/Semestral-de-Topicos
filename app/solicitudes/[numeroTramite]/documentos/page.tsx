@@ -1,17 +1,29 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { ETIQUETAS_TIPO_DOCUMENTO, TIPOS_DOCUMENTO } from "@/lib/validation/solicitud";
 
-const ETIQUETAS_TIPO: Record<string, string> = {
-  identificacion_armador: "Identificación del armador",
-  certificado_nave: "Certificado de la nave",
-  poder_autorizacion: "Poder o autorización",
+const ETIQUETAS_TIPO: Record<string, string> = ETIQUETAS_TIPO_DOCUMENTO;
+
+const ETIQUETAS_VERIFICACION: Record<string, string> = {
+  pendiente: "Verificando…",
+  aprobado: "Verificado",
+  rechazado: "Rechazado",
 };
+
+// Cada cuánto se consulta el estado mientras hay documentos en verificación.
+const INTERVALO_REFRESCO_MS = 4000;
 
 type EstadoSolicitud = {
   solicitud: { numero_tramite: string; estado: string };
-  documentos: { id: string; tipo_documento: string; nombre_original: string }[];
+  documentos: {
+    id: string;
+    tipo_documento: string;
+    nombre_original: string;
+    estado_verificacion: string;
+    motivo_rechazo: string | null;
+  }[];
   tipos_documento_requeridos: string[];
   tipos_documento_faltantes: string[];
   lista_para_enviar: boolean;
@@ -22,10 +34,11 @@ async function obtenerEstado(numeroTramite: string) {
   return res.json();
 }
 
-// HU-02 — carga de documentos de la solicitud.
+// HU-02 — carga de documentos de la solicitud. La verificación (formato,
+// antimalware, completitud) la hace el pipeline automático; cuando aprueba el
+// último documento obligatorio, la solicitud pasa sola a "en_revision".
 export default function DocumentosPage() {
   const { numeroTramite } = useParams<{ numeroTramite: string }>();
-  const router = useRouter();
 
   const [estado, setEstado] = useState<EstadoSolicitud | null>(null);
   const [tipoDocumento, setTipoDocumento] = useState("identificacion_armador");
@@ -47,6 +60,16 @@ export default function DocumentosPage() {
       activo = false;
     };
   }, [numeroTramite]);
+
+  const hayPendientes =
+    estado?.solicitud.estado === "recibida" &&
+    estado.documentos.some((d) => d.estado_verificacion === "pendiente");
+
+  useEffect(() => {
+    if (!hayPendientes) return;
+    const id = setInterval(cargar, INTERVALO_REFRESCO_MS);
+    return () => clearInterval(id);
+  }, [hayPendientes, cargar]);
 
   async function onSubirDocumento(e: React.FormEvent) {
     e.preventDefault();
@@ -75,23 +98,6 @@ export default function DocumentosPage() {
     await cargar();
   }
 
-  async function onEnviar() {
-    setCargando(true);
-    setErrores([]);
-
-    const res = await fetch(`/api/solicitudes/${numeroTramite}/enviar`, { method: "PUT" });
-    const data = await res.json();
-
-    setCargando(false);
-    if (!data.ok) {
-      setErrores(data.errores ?? ["No se pudo enviar la solicitud."]);
-      return;
-    }
-
-    router.refresh();
-    await cargar();
-  }
-
   if (!estado) return <div className="card">Cargando...</div>;
 
   const enviada = estado.solicitud.estado !== "recibida";
@@ -100,8 +106,8 @@ export default function DocumentosPage() {
     <div className="card">
       <h1>Documentación de la solicitud</h1>
       <p>
-        Número de trámite: <strong>{estado.solicitud.numero_tramite}</strong> — Estado:{" "}
-        <strong>{estado.solicitud.estado}</strong>
+        Número de trámite: <strong data-cy="numero-tramite">{estado.solicitud.numero_tramite}</strong> — Estado:{" "}
+        <strong data-cy="estado-solicitud">{estado.solicitud.estado}</strong>
       </p>
 
       <h2>Documentos requeridos</h2>
@@ -116,17 +122,35 @@ export default function DocumentosPage() {
         })}
       </ul>
 
-      {!enviada && (
+      {estado.documentos.length > 0 && (
+        <>
+          <h2>Documentos cargados</h2>
+          <ul className="lista-documentos" data-cy="documentos-cargados">
+            {estado.documentos.map((doc) => (
+              <li key={doc.id} className={`verificacion-${doc.estado_verificacion}`}>
+                {ETIQUETAS_TIPO[doc.tipo_documento] ?? doc.tipo_documento} — {doc.nombre_original}:{" "}
+                <strong>{ETIQUETAS_VERIFICACION[doc.estado_verificacion] ?? doc.estado_verificacion}</strong>
+                {doc.motivo_rechazo && <span> ({doc.motivo_rechazo} Vuelva a cargarlo.)</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {enviada ? (
+        <p className="completo">
+          La documentación fue verificada y la solicitud está en revisión por la AMP.
+        </p>
+      ) : (
         <>
           <form onSubmit={onSubirDocumento}>
             <label htmlFor="tipo_documento">Tipo de documento</label>
             <select id="tipo_documento" value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)}>
-              {Object.entries(ETIQUETAS_TIPO).map(([valor, etiqueta]) => (
+              {TIPOS_DOCUMENTO.map((valor) => (
                 <option key={valor} value={valor}>
-                  {etiqueta}
+                  {ETIQUETAS_TIPO[valor]}
                 </option>
               ))}
-              <option value="otro">Otro</option>
             </select>
 
             <label htmlFor="archivo">Archivo (PDF, PNG o JPG, máx. 5 MB)</label>
@@ -143,9 +167,10 @@ export default function DocumentosPage() {
             </button>
           </form>
 
-          <button onClick={onEnviar} disabled={cargando || !estado.lista_para_enviar}>
-            Enviar solicitud a revisión
-          </button>
+          <p>
+            Cuando los documentos obligatorios estén cargados y verificados, la solicitud pasará
+            automáticamente a revisión.
+          </p>
         </>
       )}
 
